@@ -1,0 +1,742 @@
+CCNPenterprise26-Day5
+
+startupconfig:
+
+R1:
+config t
+hostname R1
+no logging console
+ip route 0.0.0.0 0.0.0.0 208.8.8.2 
+line vty 0 14
+ transport input all
+ exec-timeout 0 0
+int gi 1
+ ip add 208.8.8.11 255.255.255.0
+ !where x= .11, .12. 13
+ no shut
+int gi 2
+ no shut
+ ip add 192.168.102.11 255.255.255.0
+int gi 3
+ no shut
+ ip add 192.168.103.11 255.255.255.0
+ end
+wr
+
+R2:
+config t
+hostname R2
+no logging console
+ip route 0.0.0.0 0.0.0.0 208.8.8.2 
+line vty 0 14
+ transport input all
+ exec-timeout 0 0
+int gi 1
+ ip add 208.8.8.12 255.255.255.0
+ !where x= .11, .12. 13
+ no shut
+int gi 2
+ no shut
+ ip add 192.168.102.12 255.255.255.0
+int gi 3
+ no shut
+ ip add 192.168.103.12 255.255.255.0
+ end
+wr
+
+R3:
+config t
+hostname R3
+no logging console
+ip route 0.0.0.0 0.0.0.0 208.8.8.2 
+line vty 0 14
+ exec-timeout 0 0
+ transport input all
+int gi 1
+ ip add 208.8.8.13 255.255.255.0
+ !where x= .11, .12. 13
+ no shut
+int gi 2
+ no shut
+ ip add 192.168.102.13 255.255.255.0
+int gi 3
+ no shut
+ ip add 192.168.103.13 255.255.255.0
+ end
+wr
+
+Rx: where x= .11,.12, .13
+config t
+R1#show run
+GI1:108.5                        GI1:108.6
+APPS1                             APPS2
+GI2:102.5                        GI2:102.6
+             HSRPIP:  102.7
+GI3:103.5                        GI3:103.6
+             HSRPIP:  103.7
+          use standby 3 and track 3
+
+R11:PrimaryInt:
+config t
+Int gi 2
+standby version 2
+standby 2 ip 192.168.102.123
+standby 2 preempt
+standby 2 Priority 150
+standby 2 track 1 decrement 60
+END
+
+R2: Backup:
+config t
+Int gi 2
+standby version 2
+standby 2 ip 192.168.102.123
+standby 2 preempt
+standby 2 Priority 100
+standby 2 track 2 decrement 20
+END
+
+R3: BackupOfBackup:
+config t
+Int gi 2
+standby version 2
+standby 2 ip 192.168.102.123
+standby 2 preempt
+standby 2 Priority 90
+END
+
+CONFIGURE REAL IP SLA: Service level agreement:
+@R1: PrimaryInt
+config t
+ip sla 1 
+  icmp-echo 8.8.8.8
+  freq 30
+  exit
+ip  sla  schedule 1 life forever start-time now
+track  1  ip sla 1
+  delay down 6 up 3
+  exit
+Int gi 2
+standby 2 track 1 decrement 60
+
+
+@R2: Secondary/backupInternet
+config t
+ip sla 2 
+  icmp-echo 8.8.8.8
+  freq 15
+  exit
+ip  sla  schedule 2 life forever start-time now
+track  2  ip sla 2
+  delay down 6 up 3
+  exit
+Int gi 2
+standby 2 track 2 decrement 20
+
+######################################
+
+Task2: CONFIGURE GLBP ON GI3: where R1 is primary, r2 is backup:
+
+R1:PrimaryInt: ActiveVirtualGateway/AVG
+config t
+Int gi 3
+glbp 3 ip 192.168.103.123
+glbp 3 priority 150
+glbp 3 preempt
+glbp 3 load-balancing host-dependent
+glbp 3 weighting 90
+glbp 3 weighting track 1 decrement 60
+end
+
+
+R2: Secondary/backupInternet: ActiveVirtualForwarder
+config t
+Int gi 3
+glbp 3 ip 192.168.103.123
+glbp 3 priority 100
+glbp 3 preempt
+glbp 3 load-balancing host-dependent
+glbp 3 weighting 95
+glbp 3 weighting track 2 decrement 20
+glbp 3 authentication md5 key-string rivankey
+end
+
+
+R3: last resort:   ActiveVirtualForwarder
+config t
+no event manager applet TangaKa
+event manager applet TangaKa
+  event cli pattern "no ip route 0.0.0.0 0.0.0.0 208.8.8.2" sync no skip yes
+  action 1.0 syslog msg "Bobo! wala na tayong Backup!..."
+  exit
+Int gi 3
+glbp 3 ip 192.168.103.123
+glbp 3 priority 90
+glbp 3 preempt
+glbp 3 load-balancing host-dependent
+glbp 3 weighting 97
+end
+
+PC1:
+debug arp
+ping 192.168.103.123
+
+
+##### variation ###########
+##### variation ###########
+R1:PrimaryInt:
+config t
+Int gi 3
+glbp 3 ip 192.168.103.123
+glbp 3 priority 150
+glbp 3 preempt
+glbp 3 load-balancing weighted
+glbp 3 weighting 100
+glbp 3 weighting track 1 decrement 60
+end
+
+
+R2: Secondary/backupInternet
+config t
+Int gi 3
+glbp 3 ip 192.168.103.123
+glbp 3 priority 100
+glbp 3 preempt
+glbp 3 load-balancing weighted
+glbp 3 weighting 75
+glbp 3 weighting track 2 decrement 20
+end
+
+
+R3: last resort:  
+config t
+no event manager applet TangaKa
+event manager applet TangaKa
+  event cli pattern "no ip route 0.0.0.0 0.0.0.0 208.8.8.2" sync no skip yes
+  action 1.0 syslog msg "Bobo! wala na tayong Backup!..."
+  exit
+Int gi 3
+glbp 3 ip 192.168.103.123
+glbp 3 priority 90
+glbp 3 preempt
+glbp 3 load-balancing weighted
+glbp 3 weighting 60
+end
+
+######################################
+ Implement GRE over IPsec Site-to-Site VPNs
+######################################
+
+There are two methods to configure GRE over IPsec:
+o Crypto maps - This is an older, classic method of configuring GRE over IPsec.
+o Tunnel IPsec profiles - This is a newer and simpler method of configuring GRE over IPsec.
+Note: Crypto maps and IPsec profile configuration options are compatible with each other. 
+Although Tunnel IPsec profiles is now the preferred method to configure GRE over IPsec, 
+crypto maps are still widely deployed and should be understood. 
+In this part, we will configure GRE over IPsec using crypto maps on R1.
+
+R1:
+config t
+crypto isakmp policy 10
+ encryption aes 256
+ hash sha256
+ authentication pre-share
+ group 14
+ lifetime 3600
+ exit
+crypto isakmp key cisco123 address 208.8.8.12
+crypto ipsec transform-set GRE-VPN esp-aes 256 esp-sha256-hmac
+ mode transport
+ exit
+ip access-list extended GRE-VPN-ACL
+  permit gre host 208.8.8.11 host 208.8.8.12
+  exit
+crypto map GRE-CMAP 10 ipsec-isakmp
+ match address GRE-VPN-ACL
+ set transform-set GRE-VPN
+ set peer 208.8.8.12
+ exit
+int gi 1
+ crypto map GRE-CMAP
+interface Tunnel1
+ bandwidth 4000
+ ip address 172.16.1.1 255.255.255.252
+ ip mtu 1400
+ tunnel source 208.8.8.11
+ tunnel destination 208.8.8.12
+ end
+
+
+R2:
+config t
+crypto isakmp policy 10
+ encryption aes 256
+ hash sha256
+ authentication pre-share
+ group 14
+ lifetime 3600
+ exit
+crypto isakmp key cisco123 address 208.8.8.11
+crypto ipsec transform-set GRE-VPN esp-aes 256 esp-sha256-hmac
+ mode transport
+ exit
+! instead of a crypto map, we will configure an IPsec profile called GRE-PROFILE using the crypto ipsec profile
+crypto ipsec profile GRE-PROFILE
+ set transform-set GRE-VPN
+ exit
+interface Tunnel1
+ bandwidth 4000
+ ip address 172.16.1.2 255.255.255.252
+ ip mtu 1400
+ tunnel source 208.8.8.12
+ tunnel destination 208.8.8.11
+ tunnel protection ipsec profile GRE-PROFILE
+ end
+ 
+R1#sh int tunnel1 
+Tunnel1 is up, line protocol is up 
+  Hardware is Tunnel
+  Internet address is 172.16.1.1/30
+  MTU 9976 bytes, BW 4000 Kbit/sec, DLY 50000 usec, 
+     reliability 255/255, txload 1/255, rxload 1/255
+Tunnel linestate evaluation up
+  Tunnel source 208.8.8.11, destination 208.8.8.12
+  Tunnel protocol/transport GRE/IP
+    Key disabled, sequencing disabledsh 
+ 
+ 
+######################################
+CCNP ENCOR Lab - Implement IPsec VTI Site-to-Site VPNs 
+ 
+######################################
+
+TRIGGER WARNING:
+IPsec can only send unicast IP traffic. Therefore, it does not support protocols
+that require multicast or broadcast communication such as routing protocols. Although
+GRE over IPsec can be configured to provide security and support for routing protocols,
+there is a newer more efficient method that can be used. 
+
+IPsec Virtual Tunnel Interface (VTI) greatly simplifies the VPN configuration 
+process and provides a simpler alternative to using GRE tunnels for encapsulation 
+and crypto maps with IPsec
+
+STEP1: Part 2: Configure Static IPsec VTI on R1 and R2
+Create a new transform set called VTI-VPN using ESP AES 256 for encryption 
+and ESP SHA256 HMAC for authentication and set the mode to tunnel
+
+R1:
+config t
+crypto isakmp policy 10
+ encryption aes 256
+ hash sha256
+ authentication pre-share
+ group 14
+ lifetime 3600
+ exit
+crypto isakmp key cisco123 address 208.8.8.12
+crypto ipsec transform-set VTI-VPN esp-aes 256 esp-sha256-hmac
+ mode tunnel
+ exit
+crypto ipsec profile VTI-PROFILE
+set transform-set VTI-VPN
+exit
+no int tun1
+interface Tunnel1
+ bandwidth 4000
+ ip address 172.16.1.1 255.255.255.252
+ ip mtu 1400
+ tunnel source 208.8.8.11
+ tunnel destination 208.8.8.12
+ tunnel mode ipsec ipv4
+ !make this a ipsec tunnel, notGRE
+ tunnel protection ipsec profile VTI-PROFILE
+ end
+
+ 
+R2:
+config t
+crypto isakmp policy 10
+ encryption aes 256
+ hash sha256
+ authentication pre-share
+ group 14
+ lifetime 3600
+ exit
+crypto isakmp key cisco123 address 208.8.8.11
+crypto ipsec transform-set VTI-VPN esp-aes 256 esp-sha256-hmac
+ mode tunnel
+ exit
+crypto ipsec profile VTI-PROFILE
+set transform-set VTI-VPN
+exit
+no int tun1
+interface Tunnel1
+ bandwidth 4000
+ ip address 172.16.1.2 255.255.255.252
+ ip mtu 1400
+ tunnel source 208.8.8.12
+ tunnel destination 208.8.8.11
+ tunnel mode ipsec ipv4
+ !make this a ipsec tunnel, notGRE
+ tunnel protection ipsec profile VTI-PROFILE
+ end
+ 
+######################################
+NATT
+######################################
+
+nat, proxy, hotspot, tethering, = PENGE INTERNET
+Give Internet to your Entire building USING CISCO:
+STEP1: define INSIDE AND OUTSIDE:
+STEP2: create Access-list to permit IP of Inside:
+STEP3: create a NAT pool with overload
+@vpnPH:
+config t
+int gi 1
+ip nat OUTSIDE
+int gi 2
+ip nat INSIDE
+int gi 3
+ip nat INSIDE
+no access-list 7
+access-list 7 permit 192.168.102.0 0.0.0.255
+access-list 7 permit 192.168.103.0 0.0.0.255
+ip nat inside source list 7 interface Gi 1 overload
+ip nat inside source static 192.168.103.100 208.8.8.69
+ip nat inside source static 192.168.103.101 208.8.8.88
+end
+FW-VPN-PH#show ip nat translations 
+
+
+######################################
+ netflow: LAB 1:
+
+######################################
+
+task1:
+ON r1:
+Show run:
+...
+flow exporter MyFlowExporter
+ NO destination 10.14.1.2
+ destination 192.168.108.1
+ transport udp 2055
+ export-protocol netflow-v9
+
+task2:
+OnSW1:
+config t
+monitor session 11 source interface e0/1 both
+monitor session 11 destination interface e1/1
+PAG tunay na switch:
+monitor session 11 source interface FA 0/5,fa0/7 both
+monitor session 11 destination interface fa 0/7
+no monitor session 11
+
+task3: Schedule the pre-configured IP SLA operation
+on R1 to start running immediately and to run indefinitely.
+
+Pa Andarin Mo:
+R1(config)#ip sla schedule 5 life forever start-time now
+
+R1#,SW1#copy running-config startup-config
+
+######################################
+ netflow: LAB 2:
+
+######################################
+r1:SHOW RUN
+
+config t
+flow exporter Export-R1Flow
+ !destination 10.10.1.10
+ destination 192.168.102.8
+ source Loopback0
+ transport udp 2055
+!
+flow monitor Monitor-R1Flow
+ exporter Export-R1Flow
+ cache timeout inactive 30
+ cache timeout active 300
+ record netflow ipv4 original-input
+!
+interface loopback0
+ ip address 1.1.1.1 255.255.255.255
+!
+!interface Ethernet0/0
+interface gi 2
+ !ip address 10.10.1.2 255.255.255.0
+  ip add 192.168.102.11 255.255.255.0
+ ip ospf network point-to-point
+!
+router ospf 10
+ router-id 1.1.1.1
+ network 1.1.1.1 0.0.0.0 area 0
+ network 10.10.1.0 0.0.0.255 area 0
+
+
+Task 1. Enable Flexible NetFlow on R1 E0/0 [gi 2] in both directions using the pre-configured flow monitor.
+
+On R1:
+
+config t
+!interface e0/0
+interface gi 2
+ ip flow monitor Monitor-R1Flow input
+ ip flow monitor Monitor-R1Flow output
+
+Task 2. Configure the switch port analyzer on Sw1 and mirror all VLAN 12 traffic to interface E1/3 using session number 12.
+
+On Sw1:
+config t
+!monitor session 12 source vlan 12 both
+monitor session 12 source vlan 1 both
+monitor session 12 destination interface fa0/3
+
+Verification
+
+SW1#show monitor session 12
+
+Task 3. Configure a basic IP SLA ICMP echo operation on R1 to ping PC1 every 300 seconds.
+
+The IP address of PC1 is 10.12.1.2
+
+On R1:
+
+R1(config)# ip sla 1
+R1(config-ip-sla)# icmp-echo 10.12.1.2 source-interface Ethernet0/0
+R1(config-ip-sla-echo)#frequency 300
+R1(config-ip-sla-echo)#exit
+R1(config)# ip sla schedule 1 life forever start-time now
+
+Verification
+
+We can check the status of this IP SLA with “show ip sla summary” command:
+
+R1# show ip sla summary
+IPSLAs Latest Operation Summary
+Codes: * active, ^ inactive, ~ pending
+ID        Type        Destination     Stats     Return        Last
+                                       (ms)       Code         Run
+-----------------------------------------------------------------------
+*1        icmp-echo   10.12.1.2       RTT=2        OK         4 seconds ago
+
+Save the configuration
+
+R1#,SW1#copy running-config startup-config
+
+
+
+          4  2  1  2 1 0
+        32 16 8  4 2 1
+32 = 1  0  0  0 0 0
+        4     0
+34   1 0   0  0 1  0
+        4       1
+36   1 0  0   1 0  0
+        4     2
+38   1 0 0    1 1  0
+        4     3
+24   0 1 1    0  0 0
+        3     0
+26   0  1 1   0  1  0
+        3     1
+28   0  1 1   1 0   0
+         3    2
+30   0  1 1   1 1   0
+         3    3
+16   0  1 0   0  0  0
+         2    0
+18   0  1 0   0  1  0
+         2       1
+20   0  1 0   1  0  0
+         2     2
+22   0  1  0  1  1  0
+          2    3
+8          1
+10         11
+12         12
+14         13 
+
+
+- How BGP prevent loops?
+- What is VRF and how it function?
+- What is Feasible in EIGRP?
+- what is the k values in EIGRP?
+- What is redistribution?
+- What is the difference between EIGRP and OSPF?
+- What is SVL and VSS in switching?
+- What is the maximum speed of Mac address? 
+- What is the purpose of VDOM in fortigate?
+- What is Route Poisoning?
+- What is primary requirements for connecting WLC ?
+
+lab1: from mori.
+config t
+!a-cm-pm-sp
+config t
+ip access-list extended TELNET
+permit tcp any any eq 23
+exit
+ip access-list extended EIGRP
+permit eigrp any any
+exit
+ip access-list extended SSH
+permit tcp any any eq 22
+exit
+ip access-list extended ICMP
+permit icmp any any
+exit
+!!!
+class-map match-all CM-TELNET
+match access-group name TELNET
+exit
+class-map match-all CM-EIGRP
+match access-group name EIGRP
+exit
+class-map match-all CM-SSH
+match access-group name SSH
+exit
+class-map match-all CM-ICMP
+match access-group name ICMP
+exit
+!!!PM
+policy-map PM-COPP
+class CM-TELNET
+police 8000 conform-action drop exceed-action drop
+exit
+class CM-EIGRP
+police rate 10 pps conform-action transmit exceed-action transmit
+exit
+class CM-SSH
+police 50000 conform-action transmit exceed-action transmit
+exit
+no class CM-ICMP
+class CM-ICMP
+police rate 5 pps conform-action transmit exceed-action drop
+exit
+class class-default
+police 12000 conform-action transmit exceed-action transmit
+!!!SP
+control-plane
+service-policy input PM-COPP
+end
+!!TEST:
+sh access-lists
+sh class-map
+sh policy-map
+show policy-map control-plane
+!!TEST:
+show policy-map control-plane
+
+
+
+task1: al-cm-pm-sp
+
+config t
+
+!indentify the traffic to filter
+ip access-list extended 100
+   permit icmp any any
+class-map PINGSTOP
+   match access-group 100
+policy-map PINGSTOPPOL
+   class PINGSTOP
+    police 8000 conform-action transmit exceed-action drop
+exit
+control-plane
+  service-policy input PINGSTOPPOL
+end
+show`  policy-map control-plane
+
+task6: enable SSH at the same time:
+SSH = vip,  Telnet = TG
+cucm:
+config t
+ip domain-name rivanencor.com
+crypto key generate rsa
+username admin privilege 15 secret pass
+line vty 0 14
+ login local
+end
+                        
+
+Task2:
+config t
+ip access-list extended CoPP_Telnet
+ deny tcp host 192.168.1.1 any eq telnet     
+ permit tcp any any eq telnet                 
+!
+class-map Telnet_class
+ match access-group name CoPP_Telnet
+!
+policy-map CoPP_Telnet_policy
+ class Telnet_class
+  police cir 8000
+   conform-action transmit
+   exceed-action drop
+!
+control-plane
+ service-policy input CoPP_Telnet_policy
+!
+
+Task3:
+use COPP to allow ssh but deny http and telnet:
+config t
+ip access-list extended CPNOHTTPS
+ permit tcp any any eq 80
+ permit tcp any any eq 443
+ permit tcp any any eq 23
+ deny tcp any any eq 22
+class-map NOHTTP
+ match access-group name CPNOHTTPS
+policy-map PONOHTTPS
+ class NOHTTP
+ police 8000 conform-action drop exceed-action drop
+exit
+
+EX2:
+config t
+!al
+ip access-list extended TELNET
+ permit tcp any any eq 23
+ exit
+ip access-list extended SSH
+ permit tcp any any eq 22
+ exit
+ip access-list extended ICMP
+ permit icmp any any
+ exit
+!cm
+class-map match-all CMTEL
+ match access-group name TELNET
+ exit
+class-map match-all CMSSH
+ match access-group name SSH
+ exit
+class-map match-all CMICMP
+ match access-group name ICMP
+ exit
+!PM
+policy-map PMCOPP
+ !DROP ALL TELNET TRAFFIC
+ no class CMTEL
+ class CMTEL
+  police 8000 conform-action drop exceed-action drop
+ !TRANSMIT ALL SSH TRAFFIC
+ class CMSSH
+  police 500000 conform-action transmit exceed-action transmit
+ !set ping at 3pps, conform to transmit, exceed to drop
+ class CMICMP
+  police rate 4 pps conform-action transmit exceed-action drop
+class class-default
+ police 12000 conform-action transmit exceed-action transmit
+ exit
+!SP
+control-plane
+ service-policy input PMCOPP
+END
+show class-map
+show policy-map
+show policy-map control-plane
+
